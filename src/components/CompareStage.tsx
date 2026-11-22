@@ -31,7 +31,6 @@ import {
   DEFAULT_POLO_CONFIG,
   FABRIC_TYPE_OPTIONS,
   GARMENT_COLORWAY_PRESETS,
-  getColorLuminance,
   getEffectiveSvgPaletteSwatches,
   getLogoVariantMeta,
   LOGO_COLOR_PRESETS,

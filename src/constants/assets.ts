@@ -10,12 +10,6 @@ export const USER_LOGO_URL =
 export const HEX_EMBLEM_LOGO_URL =
   '/assets/aistudio/image_a9600d6b.png';
 
-export const AI_SLEEVE_RENDER_URL =
-  '/src/assets/images/polo_mockup_sleeve_logo_small_1795339134390.jpg';
-
-export const AI_SLEEVE_RED_ROOF_URL =
-  '/src/assets/images/polo_mockup_thick_red_roof_1795339888335.jpg';
-
 export interface InspectHotspot {
   id: string;
   label: string;
