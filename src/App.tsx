@@ -4,16 +4,135 @@ import { CompareStage } from './components/CompareStage';
 import { LogoDetailCard } from './components/LogoDetailCard';
 import { AngleCropsGrid } from './components/AngleCropsGrid';
 import { RetouchStudio } from './components/RetouchStudio';
+import type { CameraPresetId } from './components/Polo3DViewer';
 import { CLEANED_IMAGE_URL } from './constants/assets';
 import { exportImageRegion } from './utils/canvasExport';
 import {
+  applyAutoContrastForShirt,
   composePoloMockup,
   DEFAULT_POLO_CONFIG,
+  GARMENT_COLORWAY_PRESETS,
+  getLogoVariantMeta,
+  isRatchasitSvgLogo,
+  type FabricType,
+  type GarmentStyle,
+  type LogoPlacement,
+  type LogoVariant,
   type PoloDesignConfig,
 } from './utils/sleeveLogoComposer';
 
+function parseInitialStateFromQuery(): {
+  config: PoloDesignConfig;
+  studioOpen: boolean;
+  cameraPreset: CameraPresetId;
+} {
+  let cfg: PoloDesignConfig = { ...DEFAULT_POLO_CONFIG };
+  let studioOpen = false;
+  let cameraPreset: CameraPresetId = 'hero';
+
+  if (typeof window === 'undefined') {
+    return { config: cfg, studioOpen, cameraPreset };
+  }
+
+  const params = new URLSearchParams(window.location.search);
+
+  const colorwayId = params.get('colorway');
+  if (colorwayId) {
+    const preset = GARMENT_COLORWAY_PRESETS.find((c) => c.id === colorwayId);
+    if (preset) {
+      cfg = {
+        ...cfg,
+        garmentStyle: preset.garmentStyle,
+        fabricType: preset.fabricType,
+        shirtColor: preset.shirtColor,
+        collarColor: preset.collarColor,
+        cuffColor: preset.cuffColor,
+        tippingStyle: preset.tippingStyle,
+        tippingColor: preset.tippingColor,
+        placketColor: preset.placketColor,
+        buttonColor: preset.buttonColor,
+      };
+    }
+  }
+
+  const garment = params.get('garment');
+  if (garment === 'polo' || garment === 'stand-collar') {
+    cfg.garmentStyle = garment as GarmentStyle;
+  }
+
+  const fabric = params.get('fabric');
+  if (
+    fabric === 'cotton-pique' ||
+    fabric === 'heavy-twill' ||
+    fabric === 'dry-fit'
+  ) {
+    cfg.fabricType = fabric as FabricType;
+  }
+
+  const chest = params.get('chest');
+  if (chest && (chest === 'none' || isRatchasitSvgLogo(chest))) {
+    cfg.chestLogoVariant = chest as LogoVariant | 'none';
+  }
+
+  const sleeve = params.get('sleeve');
+  if (sleeve && (sleeve === 'none' || isRatchasitSvgLogo(sleeve))) {
+    cfg.sleeveLogoVariant = sleeve as LogoVariant | 'none';
+  }
+
+  const logoParam = params.get('logo');
+  if (logoParam) {
+    const meta = getLogoVariantMeta(logoParam as LogoVariant);
+    if (meta.id === logoParam) {
+      cfg.logoVariant = meta.id;
+      if (meta.defaultWidthCm) cfg.widthCm = meta.defaultWidthCm;
+      if (meta.isRatchasitSvg) {
+        cfg.placement = meta.category === 'chest' ? 'left-chest' : 'left-sleeve';
+      }
+    }
+  }
+
+  const placementParam = params.get('placement');
+  if (
+    placementParam === 'left-sleeve' ||
+    placementParam === 'right-sleeve' ||
+    placementParam === 'left-chest' ||
+    placementParam === 'right-chest' ||
+    placementParam === 'center-back' ||
+    placementParam === 'chest-and-left-sleeve'
+  ) {
+    cfg.placement = placementParam as LogoPlacement;
+  }
+
+  if (params.get('dual') === '1') {
+    cfg.placement = 'chest-and-left-sleeve';
+    if (!logoParam && cfg.chestLogoVariant !== 'none') {
+      cfg.logoVariant = cfg.chestLogoVariant;
+      cfg.widthCm = cfg.chestWidthCm;
+    }
+  }
+
+  if (params.get('panel') === 'open') {
+    studioOpen = true;
+  }
+
+  const cam = params.get('camera');
+  if (
+    cam === 'hero' ||
+    cam === 'front' ||
+    cam === 'left-sleeve' ||
+    cam === 'left-chest' ||
+    cam === 'back' ||
+    cam === 'right-sleeve'
+  ) {
+    cameraPreset = cam;
+  }
+
+  return { config: applyAutoContrastForShirt(cfg), studioOpen, cameraPreset };
+}
+
 export default function App() {
-  const [config, setConfig] = useState<PoloDesignConfig>(DEFAULT_POLO_CONFIG);
+  const [initialState] = useState(parseInitialStateFromQuery);
+  const [config, setConfig] = useState<PoloDesignConfig>(initialState.config);
   const [resultImageUrl, setResultImageUrl] = useState<string>(CLEANED_IMAGE_URL);
   const [isComposing, setIsComposing] = useState<boolean>(true);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
@@ -72,18 +191,16 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F6F7F7] text-[#111827]">
-      {/* Strict 3-Zone Top Bar */}
-      <header className="sticky top-0 z-30 bg-[#F6F7F7]/95 border-b border-zinc-200/80">
+      {/* Strict 3-Zone Top Bar (Opaque Header — zero scroll bleed) */}
+      <header className="sticky top-0 z-30 bg-[#F6F7F7] border-b border-zinc-200/80 shadow-[0_1px_0_rgba(15,23,42,0.03)]">
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-8">
-          {/* Zone 1: Single-line Brand Wordmark */}
           <a
             href="#compare"
-            className="font-display text-lg font-semibold tracking-tight text-[#111827] whitespace-nowrap shrink-0"
+            className="font-display text-base sm:text-lg font-bold tracking-tight text-[#111827] whitespace-nowrap shrink-0"
           >
-            CleanMockup
+            62RAJASIT CONSTRUCTION
           </a>
 
-          {/* Zone 2: Concise Single-Line Nav Links */}
           <nav
             aria-label="นำทางหลัก"
             className="hidden md:flex items-center gap-7 text-sm font-medium text-[#525B63]"
@@ -114,7 +231,6 @@ export default function App() {
             </a>
           </nav>
 
-          {/* Zone 3: Single Primary Action */}
           <div className="shrink-0">
             <button
               type="button"
@@ -129,7 +245,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="flex-1">
         <CompareStage
           resultImageUrl={resultImageUrl}
@@ -139,6 +254,8 @@ export default function App() {
           onDownloadFull={handleDownloadFullPng}
           isDownloading={isDownloading}
           onNotify={showToast}
+          initialStudioOpen={initialState.studioOpen}
+          initialCameraPreset={initialState.cameraPreset}
         />
         <LogoDetailCard
           config={config}
@@ -149,10 +266,9 @@ export default function App() {
         <RetouchStudio defaultImageUrl={resultImageUrl} onNotify={showToast} />
       </main>
 
-      {/* Quiet Studio Footer */}
       <footer className="border-t border-zinc-200/80 py-8">
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#525B63]">
-          <p>CleanMockup — สตูดิโอออกแบบเสื้อโปโล 3D และรายละเอียดโลโก้</p>
+          <p>62RAJASIT CONSTRUCTION — สตูดิโอออกแบบเสื้อโปโล / เสื้อคอตั้ง 3D และโลโก้รุ่น 62</p>
           <a
             href="#compare"
             className="hover:text-[#111827] transition-colors whitespace-nowrap"
@@ -162,7 +278,6 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Accessible Action Toast */}
       {toastMessage && (
         <div
           role="status"

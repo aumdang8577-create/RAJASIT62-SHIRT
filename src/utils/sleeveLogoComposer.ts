@@ -10,18 +10,66 @@ import {
   type CustomLogoDesignId,
   type LogoVariantMeta,
 } from './customLogoDesigns';
+import {
+  getEffectiveSvgPaletteSwatches,
+  isRatchasitSvgLogo,
+  loadRatchasitSvgCanvas,
+  RATCHASIT_SVG_CATALOG,
+  type RatchasitSvgLogoId,
+} from './ratchasitLogoAssets';
 
-export { LOGO_VARIANT_CATALOG, type LogoVariantMeta };
+export {
+  getEffectiveSvgPaletteSwatches,
+  LOGO_VARIANT_CATALOG,
+  RATCHASIT_SVG_CATALOG,
+  isRatchasitSvgLogo,
+  type LogoVariantMeta,
+  type RatchasitSvgLogoId,
+};
 
-export type LogoVariant = 'gable-62' | 'hex-crest' | CustomLogoDesignId;
+export type LogoVariant =
+  | 'gable-62'
+  | 'hex-crest'
+  | CustomLogoDesignId
+  | RatchasitSvgLogoId;
+
+export const RATCHASIT_VARIANT_METAS: LogoVariantMeta[] = RATCHASIT_SVG_CATALOG.map(
+  (item) => ({
+    id: item.id,
+    badgeNumber: item.badgeNumber,
+    shortTitle: item.shortTitle,
+    title: item.title,
+    subtitle: item.subtitle,
+    detailDesc: item.detailDesc,
+    hasWhiteShield: item.hasLightPatch,
+    isRatchasitSvg: true,
+    category: item.category,
+    defaultWidthCm: item.defaultWidthCm,
+    paletteSwatches: item.paletteSwatches,
+    colorLabels: {
+      number: 'สีหลักงานปัก/สกรีน',
+      plumb: 'สีเน้นรอง',
+      accent: 'สีเส้นคั่น/ใบกบ',
+      frame: 'สีกรอบ/พื้นหลัง',
+    },
+  })
+);
+
+export const ALL_LOGO_VARIANTS: LogoVariantMeta[] = [
+  ...RATCHASIT_VARIANT_METAS,
+  ...LOGO_VARIANT_CATALOG,
+];
 
 export function getLogoVariantMeta(variant: LogoVariant): LogoVariantMeta {
   return (
-    LOGO_VARIANT_CATALOG.find((item) => item.id === variant) ??
-    LOGO_VARIANT_CATALOG[1]
+    ALL_LOGO_VARIANTS.find((item) => item.id === variant) ??
+    ALL_LOGO_VARIANTS[0]
   );
 }
 
+export type GarmentStyle = 'polo' | 'stand-collar';
+export type FabricType = 'cotton-pique' | 'heavy-twill' | 'dry-fit';
+export type TippingStyle = 'none' | 'single' | 'double';
 export type LogoStyle = 'embroidery' | 'navy-patch';
 export type StageBackdrop = 'original' | 'white' | 'dark' | 'transparent';
 export type LogoPlacement =
@@ -33,12 +81,34 @@ export type LogoPlacement =
   | 'chest-and-left-sleeve';
 
 export interface PoloDesignConfig {
-  /** Active logo option: 'gable-62' (original roof 62) or 'hex-crest' (hexagon plane + plumb bob) */
+  /** Active garment silhouette in 3D studio */
+  garmentStyle: GarmentStyle;
+  /** Physical cloth weave material in 3D studio */
+  fabricType: FabricType;
+  /** Active logo option */
   logoVariant: LogoVariant;
   /** Polo shirt main body fabric hex color */
   shirtColor: string;
-  /** Collar & sleeve cuff trim hex color */
+  /** Collar trim hex color */
   collarColor: string;
+  /** Sleeve cuff hex color */
+  cuffColor: string;
+  /** Tipping stripe pattern on collar & cuffs */
+  tippingStyle: TippingStyle;
+  /** Tipping stripe hex color */
+  tippingColor: string;
+  /** Front button placket hex color */
+  placketColor: string;
+  /** Button body hex color */
+  buttonColor: string;
+  /** Dual-Kit: Independent left-chest emblem */
+  chestLogoVariant: LogoVariant | 'none';
+  /** Dual-Kit: Independent left-sleeve emblem */
+  sleeveLogoVariant: LogoVariant | 'none';
+  /** Dual-Kit: Left-chest width in cm */
+  chestWidthCm: number;
+  /** Dual-Kit: Left-sleeve width in cm */
+  sleeveWidthCm: number;
   /** Variant 1 (gable-62): Pitched roof / gable (จั่ว) hex color */
   roofColor: string;
   /** Variant 1 (gable-62): Number "62" and flanking bars hex color */
@@ -49,9 +119,9 @@ export interface PoloDesignConfig {
   patchBgColor: string;
   /** Variant 1 (gable-62): Roof stroke thickness multiplier (1.0 - 3.0) */
   roofThickness: number;
-  /** Variant 2 (hex-crest): Number "62" color (requested: navy) */
+  /** Variant 2 (hex-crest): Number "62" color */
   hexNumberColor: string;
-  /** Variant 2 (hex-crest): Bottom plumb bob (ลูกดิ่ง) color (requested: gold) */
+  /** Variant 2 (hex-crest): Bottom plumb bob (ลูกดิ่ง) color */
   hexPlumbColor: string;
   /** Variant 2 (hex-crest): Carpenter's plane & divider accent color */
   hexAccentColor: string;
@@ -61,12 +131,14 @@ export interface PoloDesignConfig {
   style: LogoStyle;
   /** Logo placement on the polo shirt */
   placement: LogoPlacement;
-  /** Real-world logo width in cm */
+  /** Real-world logo width in cm (single placement mode) */
   widthCm: number;
   /** Distance above sleeve band in cm (or vertical offset cm on chest/back) */
   gapAboveBandCm: number;
   /** Fine horizontal shift (-0.25 .. +0.25) */
   horizontalShift: number;
+  /** Automatically adapt transparent emblem ink colors to contrast against shirtColor */
+  autoContrastLogo: boolean;
   /** Studio backdrop tone for 2D mockup, 3D viewer, and PNG exports */
   backdrop: StageBackdrop;
 }
@@ -82,10 +154,161 @@ export const STAGE_BACKDROP_OPTIONS: Array<{
   { id: 'transparent', label: 'พื้นหลังโปร่งใส', swatchStyle: 'checker' },
 ];
 
+export const FABRIC_TYPE_OPTIONS: Array<{
+  id: FabricType;
+  label: string;
+  shortDesc: string;
+}> = [
+  { id: 'cotton-pique', label: 'Cotton Piqué', shortDesc: 'ผ้าจูติรังผึ้งโปโล' },
+  { id: 'heavy-twill', label: 'Heavy Twill', shortDesc: 'ผ้าทวิลล์เสื้อช่าง' },
+  { id: 'dry-fit', label: 'Dry-Fit', shortDesc: 'ผ้าไมโครระบายอากาศ' },
+];
+
+export const TIPPING_STYLE_OPTIONS: Array<{
+  id: TippingStyle;
+  label: string;
+}> = [
+  { id: 'none', label: 'ไม่มีเส้นขลิบ' },
+  { id: 'single', label: 'ขลิบ 1 เส้น' },
+  { id: 'double', label: 'ขลิบ 2 เส้น' },
+];
+
+export interface GarmentColorwayPreset {
+  id: string;
+  name: string;
+  garmentStyle: GarmentStyle;
+  fabricType: FabricType;
+  shirtColor: string;
+  collarColor: string;
+  cuffColor: string;
+  tippingStyle: TippingStyle;
+  tippingColor: string;
+  placketColor: string;
+  buttonColor: string;
+}
+
+export const GARMENT_COLORWAY_PRESETS: GarmentColorwayPreset[] = [
+  {
+    id: 'navy62',
+    name: 'กรมท่าช่าง 62',
+    garmentStyle: 'stand-collar',
+    fabricType: 'heavy-twill',
+    shirtColor: '#1B2436',
+    collarColor: '#1B2436',
+    cuffColor: '#1B2436',
+    tippingStyle: 'single',
+    tippingColor: '#E5C573',
+    placketColor: '#1B2436',
+    buttonColor: '#141923',
+  },
+  {
+    id: 'white-navy',
+    name: 'ขาวปกกรมท่า',
+    garmentStyle: 'polo',
+    fabricType: 'cotton-pique',
+    shirtColor: '#F4F5F6',
+    collarColor: '#1F3554',
+    cuffColor: '#1F3554',
+    tippingStyle: 'none',
+    tippingColor: '#E5C573',
+    placketColor: '#F4F5F6',
+    buttonColor: '#191D24',
+  },
+  {
+    id: 'navy-gold',
+    name: 'กรมท่าขลิบทอง',
+    garmentStyle: 'polo',
+    fabricType: 'cotton-pique',
+    shirtColor: '#1C2E4A',
+    collarColor: '#16243B',
+    cuffColor: '#16243B',
+    tippingStyle: 'double',
+    tippingColor: '#E5C573',
+    placketColor: '#1C2E4A',
+    buttonColor: '#14171C',
+  },
+  {
+    id: 'charcoal-gold',
+    name: 'ดำถ่านขลิบทอง',
+    garmentStyle: 'polo',
+    fabricType: 'cotton-pique',
+    shirtColor: '#23272D',
+    collarColor: '#181B20',
+    cuffColor: '#181B20',
+    tippingStyle: 'single',
+    tippingColor: '#E5C573',
+    placketColor: '#23272D',
+    buttonColor: '#121519',
+  },
+  {
+    id: 'smoke-gray',
+    name: 'เทาควันบุหรี่',
+    garmentStyle: 'polo',
+    fabricType: 'dry-fit',
+    shirtColor: '#5B6470',
+    collarColor: '#1F242D',
+    cuffColor: '#1F242D',
+    tippingStyle: 'single',
+    tippingColor: '#FFFFFF',
+    placketColor: '#5B6470',
+    buttonColor: '#191D24',
+  },
+  {
+    id: 'crimson-maroon',
+    name: 'แดงเลือดหมู',
+    garmentStyle: 'polo',
+    fabricType: 'cotton-pique',
+    shirtColor: '#6E222B',
+    collarColor: '#182438',
+    cuffColor: '#182438',
+    tippingStyle: 'double',
+    tippingColor: '#E5C573',
+    placketColor: '#6E222B',
+    buttonColor: '#14171C',
+  },
+  {
+    id: 'olive-tech',
+    name: 'เขียวมะกอกช่าง',
+    garmentStyle: 'stand-collar',
+    fabricType: 'heavy-twill',
+    shirtColor: '#435346',
+    collarColor: '#2B362D',
+    cuffColor: '#2B362D',
+    tippingStyle: 'none',
+    tippingColor: '#E5C573',
+    placketColor: '#435346',
+    buttonColor: '#2A231E',
+  },
+  {
+    id: 'cream-vintage',
+    name: 'ขาวครีมวินเทจ',
+    garmentStyle: 'polo',
+    fabricType: 'cotton-pique',
+    shirtColor: '#EFE9DD',
+    collarColor: '#243044',
+    cuffColor: '#243044',
+    tippingStyle: 'double',
+    tippingColor: '#C85A28',
+    placketColor: '#EFE9DD',
+    buttonColor: '#5C4028',
+  },
+];
+
 export const DEFAULT_POLO_CONFIG: PoloDesignConfig = {
+  garmentStyle: 'polo',
+  fabricType: 'cotton-pique',
   logoVariant: 'hex-crest',
   shirtColor: '#F4F5F6',
   collarColor: '#1F3554',
+  cuffColor: '#1F3554',
+  tippingStyle: 'none',
+  tippingColor: '#E5C573',
+  placketColor: '#F4F5F6',
+  buttonColor: '#191D24',
+  chestLogoVariant: 'rs62-chest-monogram',
+  sleeveLogoVariant: 'rs62-sleeve-v3',
+  chestWidthCm: 7.2,
+  sleeveWidthCm: 6.5,
   roofColor: '#C81E2B',
   numberColor: '#D4A848',
   textColor: '#1A2E4A',
@@ -100,6 +323,7 @@ export const DEFAULT_POLO_CONFIG: PoloDesignConfig = {
   widthCm: 4.0,
   gapAboveBandCm: 1.0,
   horizontalShift: 0,
+  autoContrastLogo: true,
   backdrop: 'original',
 };
 
@@ -109,23 +333,38 @@ export interface ColorPreset {
 }
 
 export const SHIRT_COLOR_PRESETS: ColorPreset[] = [
+  { name: 'กรมท่าช่าง 62', hex: '#1B2436' },
   { name: 'ขาวสตูดิโอ', hex: '#F4F5F6' },
-  { name: 'ขาวครีม', hex: '#EFE9DD' },
-  { name: 'เทาอ่อน', hex: '#CFD5DA' },
-  { name: 'ฟ้าอ่อน', hex: '#C6D9EC' },
-  { name: 'กรมท่า', hex: '#1C2E4A' },
+  { name: 'ขาวครีมวินเทจ', hex: '#EFE9DD' },
+  { name: 'เทาหมอกอ่อน', hex: '#CFD5DA' },
+  { name: 'เทาควันบุหรี่', hex: '#5B6470' },
+  { name: 'ฟ้าสเลทอ่อน', hex: '#C6D9EC' },
+  { name: 'น้ำเงินราชนาวี', hex: '#1C2E4A' },
   { name: 'ดำถ่าน', hex: '#23272D' },
-  { name: 'เขียวมะกอก', hex: '#4B5E50' },
+  { name: 'เขียวมะกอกช่าง', hex: '#435346' },
   { name: 'แดงเลือดหมู', hex: '#6E222B' },
+  { name: 'น้ำตาลโกโก้', hex: '#4A362B' },
+  { name: 'ส้มคอปเปอร์', hex: '#A94923' },
 ];
 
 export const COLLAR_COLOR_PRESETS: ColorPreset[] = [
+  { name: 'กรมท่าช่าง 62', hex: '#1B2436' },
   { name: 'กรมท่าเดิม', hex: '#1F3554' },
   { name: 'ดำเข้ม', hex: '#1A1D22' },
   { name: 'ขาว', hex: '#F3F4F6' },
   { name: 'แดงเลือดหมู', hex: '#7A1F28' },
-  { name: 'ทองเข้ม', hex: '#9A762F' },
+  { name: 'ทองแชมเปญ', hex: '#E5C573' },
   { name: 'เทาเข้ม', hex: '#4A545E' },
+  { name: 'ส้มคอปเปอร์', hex: '#C85A28' },
+];
+
+export const BUTTON_COLOR_PRESETS: ColorPreset[] = [
+  { name: 'ดำมุก', hex: '#191D24' },
+  { name: 'กรมท่าเข้ม', hex: '#1B2436' },
+  { name: 'เขาสัตว์น้ำตาล', hex: '#5C4028' },
+  { name: 'ขาวงาช้าง', hex: '#ECEAE4' },
+  { name: 'ทองเหลือง', hex: '#B8862D' },
+  { name: 'เทากราไฟต์', hex: '#4B5563' },
 ];
 
 export const LOGO_COLOR_PRESETS: ColorPreset[] = [
@@ -1294,15 +1533,128 @@ async function buildHexCrestLogoCanvas(
   return canvas;
 }
 
+function isRedDishColor(hex: string): boolean {
+  const [r, g, b] = hexToRgb(hex);
+  const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+  return r > 90 && r > g * 1.65 && r > b * 1.65 && luma < 155;
+}
+
+function isGoldToneColor(hex: string): boolean {
+  const [r, g, b] = hexToRgb(hex);
+  const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+  return r > 165 && g > 120 && b < 115 && luma >= 115;
+}
+
+/**
+ * Automatically updates procedural logo colors (`textColor`, `roofColor`,
+ * `numberColor`, `hexFrameColor`, `hexNumberColor`, etc.) when shirtColor changes
+ * so no emblem element blends into light, dark, gold, or crimson fabrics.
+ */
+export function applyAutoContrastForShirt(
+  cfg: PoloDesignConfig
+): PoloDesignConfig {
+  if (!cfg.autoContrastLogo) return cfg;
+
+  const luma = getColorLuminance(cfg.shirtColor);
+  const isLight = luma >= 145;
+  const isDark = luma < 120;
+  const isRed = isRedDishColor(cfg.shirtColor);
+  const isGold = isGoldToneColor(cfg.shirtColor);
+
+  let nextTextColor = cfg.textColor;
+  const textLuma = getColorLuminance(nextTextColor);
+  if (isDark && textLuma < 120) {
+    nextTextColor = '#FFFFFF';
+  } else if (isLight && textLuma > 195) {
+    nextTextColor = '#12244D';
+  } else if (isRed && isRedDishColor(nextTextColor)) {
+    nextTextColor = '#FFFFFF';
+  }
+
+  let nextRoofColor = cfg.roofColor;
+  let nextNumberColor = cfg.numberColor;
+  if (cfg.logoVariant === 'gable-62') {
+    const roofLuma = getColorLuminance(nextRoofColor);
+    const numLuma = getColorLuminance(nextNumberColor);
+    if (isLight) {
+      if (roofLuma > 185) nextRoofColor = isGold ? '#7C2D12' : '#9E6E14';
+      if (numLuma > 185) nextNumberColor = '#12244D';
+    } else if (isDark) {
+      if (roofLuma < 85) nextRoofColor = '#E5C573';
+      if (numLuma < 85) nextNumberColor = '#FFFFFF';
+    }
+    if (isRed) {
+      if (isRedDishColor(nextRoofColor)) nextRoofColor = '#E5C573';
+      if (isRedDishColor(nextNumberColor)) nextNumberColor = '#FFFFFF';
+    }
+  }
+
+  let nextHexFrame = cfg.hexFrameColor;
+  let nextHexNumber = cfg.hexNumberColor;
+  let nextHexPlumb = cfg.hexPlumbColor;
+  let nextHexAccent = cfg.hexAccentColor;
+
+  if (!isRatchasitSvgLogo(cfg.logoVariant) && cfg.logoVariant !== 'gable-62') {
+    const hasWhiteShield = getLogoVariantMeta(cfg.logoVariant).hasWhiteShield;
+    if (!hasWhiteShield) {
+      if (isLight) {
+        if (getColorLuminance(nextHexFrame) > 185) nextHexFrame = '#12244D';
+        if (getColorLuminance(nextHexNumber) > 185) nextHexNumber = '#12244D';
+        if (isGold && isGoldToneColor(nextHexPlumb)) nextHexPlumb = '#7C2D12';
+      } else if (isDark) {
+        if (getColorLuminance(nextHexFrame) < 90) nextHexFrame = '#FFFFFF';
+        if (getColorLuminance(nextHexNumber) < 90) nextHexNumber = '#FFFFFF';
+        if (isRed && isRedDishColor(nextHexAccent)) nextHexAccent = '#E5C573';
+      }
+    }
+  }
+
+  return {
+    ...cfg,
+    textColor: nextTextColor,
+    roofColor: nextRoofColor,
+    numberColor: nextNumberColor,
+    hexFrameColor: nextHexFrame,
+    hexNumberColor: nextHexNumber,
+    hexPlumbColor: nextHexPlumb,
+    hexAccentColor: nextHexAccent,
+  };
+}
+
+export function shouldMultiplyLogoOnShirt(
+  variant: LogoVariant,
+  style: LogoStyle,
+  shirtColor: string
+): boolean {
+  const shirtLuma = getColorLuminance(shirtColor);
+  const hasWhiteShield = getLogoVariantMeta(variant).hasWhiteShield;
+  if (hasWhiteShield) {
+    // Keep cream (#F5EFE0), ice-blue (#F2F5F9), and white (#FFFFFF) woven patch backgrounds crisp
+    return false;
+  }
+  return (
+    (variant !== 'gable-62' || style === 'embroidery') && shirtLuma > 165
+  );
+}
+
 /**
  * Unified logo builder returning the active logo variant canvas at full resolution.
  */
 export async function buildCustomizedLogoCanvas(
   config: PoloDesignConfig,
   overrideVariant?: LogoVariant,
-  overrideStyle?: LogoStyle
+  overrideStyle?: LogoStyle,
+  options?: { useReferenceDarkForThumb?: boolean }
 ): Promise<HTMLCanvasElement> {
   const variant = overrideVariant ?? config.logoVariant;
+  if (isRatchasitSvgLogo(variant)) {
+    return loadRatchasitSvgCanvas(
+      variant,
+      1024,
+      options?.useReferenceDarkForThumb ? undefined : config.shirtColor,
+      options?.useReferenceDarkForThumb ? false : config.autoContrastLogo
+    );
+  }
   if (variant === 'gable-62') {
     return buildGableLogoCanvas({
       ...config,
@@ -1352,6 +1704,7 @@ function drawLogoOnSleeveCuffs(
   cuffs: DetectedCuff[],
   config: PoloDesignConfig,
   useMultiply: boolean,
+  hasBadgeShadow: boolean,
   overrideWidthCm?: number
 ) {
   const logoAspect = logoCanvas.height / logoCanvas.width;
@@ -1384,9 +1737,6 @@ function drawLogoOnSleeveCuffs(
       ctx.drawImage(logoCanvas, -drawW / 2, -drawH / 2, drawW, drawH);
     } else {
       ctx.globalCompositeOperation = 'source-over';
-      const hasBadgeShadow =
-        getLogoVariantMeta(config.logoVariant).hasWhiteShield ||
-        (config.logoVariant === 'gable-62' && config.style === 'navy-patch');
       if (hasBadgeShadow) {
         ctx.shadowColor = 'rgba(15, 23, 42, 0.18)';
         ctx.shadowBlur = Math.max(1, drawW * 0.03);
@@ -1406,6 +1756,7 @@ function drawLogoOnFlatRegions(
   targets: FlatRegionTarget[],
   config: PoloDesignConfig,
   useMultiply: boolean,
+  hasBadgeShadow: boolean,
   overrideWidthCm?: number
 ) {
   const logoAspect = logoCanvas.height / logoCanvas.width;
@@ -1435,9 +1786,6 @@ function drawLogoOnFlatRegions(
       ctx.drawImage(logoCanvas, -drawW / 2, -drawH / 2, drawW, drawH);
     } else {
       ctx.globalCompositeOperation = 'source-over';
-      const hasBadgeShadow =
-        getLogoVariantMeta(config.logoVariant).hasWhiteShield ||
-        (config.logoVariant === 'gable-62' && config.style === 'navy-patch');
       if (hasBadgeShadow) {
         ctx.shadowColor = 'rgba(15, 23, 42, 0.18)';
         ctx.shadowBlur = Math.max(1, drawW * 0.03);
@@ -1451,7 +1799,7 @@ function drawLogoOnFlatRegions(
 
 /**
  * Renders the full 4-view 2D polo shirt mockup with live shirt/collar recoloring,
- * active logo variant, custom colors, roof thickness, and placement.
+ * active logo variant (including Dual-Kit chest + left-sleeve mode), and placement.
  */
 export async function composePoloMockup(
   config: PoloDesignConfig
@@ -1475,20 +1823,94 @@ export async function composePoloMockup(
   const ctx = baseCanvas.getContext('2d');
   if (!ctx) return CLEANED_IMAGE_URL;
 
+  if (config.placement === 'chest-and-left-sleeve') {
+    const chestVariant =
+      config.chestLogoVariant === 'none' ? null : config.chestLogoVariant;
+    const sleeveVariant =
+      config.sleeveLogoVariant === 'none' ? null : config.sleeveLogoVariant;
+
+    const [chestCanvas, sleeveCanvas] = await Promise.all([
+      chestVariant
+        ? buildCustomizedLogoCanvas(config, chestVariant)
+        : Promise.resolve(null),
+      sleeveVariant
+        ? buildCustomizedLogoCanvas(config, sleeveVariant)
+        : Promise.resolve(null),
+    ]);
+
+    if (sleeveCanvas && sleeveVariant) {
+      const sleeveMultiply = shouldMultiplyLogoOnShirt(
+        sleeveVariant,
+        config.style,
+        config.shirtColor
+      );
+      const sleeveShadow =
+        getLogoVariantMeta(sleeveVariant).hasWhiteShield ||
+        (sleeveVariant === 'gable-62' && config.style === 'navy-patch');
+      drawLogoOnSleeveCuffs(
+        ctx,
+        sleeveCanvas,
+        cachedLeftCuffs,
+        config,
+        sleeveMultiply,
+        sleeveShadow,
+        config.sleeveWidthCm
+      );
+    }
+
+    if (chestCanvas && chestVariant) {
+      const chestMultiply = shouldMultiplyLogoOnShirt(
+        chestVariant,
+        config.style,
+        config.shirtColor
+      );
+      const chestShadow =
+        getLogoVariantMeta(chestVariant).hasWhiteShield ||
+        (chestVariant === 'gable-62' && config.style === 'navy-patch');
+      drawLogoOnFlatRegions(
+        ctx,
+        baseCanvas.width,
+        baseCanvas.height,
+        chestCanvas,
+        LEFT_CHEST_TARGETS,
+        config,
+        chestMultiply,
+        chestShadow,
+        config.chestWidthCm
+      );
+    }
+
+    return baseCanvas.toDataURL('image/png');
+  }
+
   const logoCanvas = await buildCustomizedLogoCanvas(config);
-  const shirtLuma = getColorLuminance(config.shirtColor);
-  const hasWhiteShield = getLogoVariantMeta(config.logoVariant).hasWhiteShield;
-  // White-shield crests multiply on bright white shirts to show cotton folds,
-  // while using source-over on colored/dark shirts to keep the shield crisp.
-  const useMultiply = hasWhiteShield
-    ? shirtLuma > 210
-    : (config.logoVariant !== 'gable-62' || config.style === 'embroidery') &&
-      shirtLuma > 160;
+  const useMultiply = shouldMultiplyLogoOnShirt(
+    config.logoVariant,
+    config.style,
+    config.shirtColor
+  );
+  const hasBadgeShadow =
+    getLogoVariantMeta(config.logoVariant).hasWhiteShield ||
+    (config.logoVariant === 'gable-62' && config.style === 'navy-patch');
 
   if (config.placement === 'left-sleeve') {
-    drawLogoOnSleeveCuffs(ctx, logoCanvas, cachedLeftCuffs, config, useMultiply);
+    drawLogoOnSleeveCuffs(
+      ctx,
+      logoCanvas,
+      cachedLeftCuffs,
+      config,
+      useMultiply,
+      hasBadgeShadow
+    );
   } else if (config.placement === 'right-sleeve') {
-    drawLogoOnSleeveCuffs(ctx, logoCanvas, cachedRightCuffs, config, useMultiply);
+    drawLogoOnSleeveCuffs(
+      ctx,
+      logoCanvas,
+      cachedRightCuffs,
+      config,
+      useMultiply,
+      hasBadgeShadow
+    );
   } else if (config.placement === 'left-chest') {
     drawLogoOnFlatRegions(
       ctx,
@@ -1497,7 +1919,8 @@ export async function composePoloMockup(
       logoCanvas,
       LEFT_CHEST_TARGETS,
       config,
-      useMultiply
+      useMultiply,
+      hasBadgeShadow
     );
   } else if (config.placement === 'right-chest') {
     drawLogoOnFlatRegions(
@@ -1507,7 +1930,8 @@ export async function composePoloMockup(
       logoCanvas,
       RIGHT_CHEST_TARGETS,
       config,
-      useMultiply
+      useMultiply,
+      hasBadgeShadow
     );
   } else if (config.placement === 'center-back') {
     drawLogoOnFlatRegions(
@@ -1517,26 +1941,8 @@ export async function composePoloMockup(
       logoCanvas,
       CENTER_BACK_TARGETS,
       config,
-      useMultiply
-    );
-  } else if (config.placement === 'chest-and-left-sleeve') {
-    drawLogoOnSleeveCuffs(
-      ctx,
-      logoCanvas,
-      cachedLeftCuffs,
-      config,
       useMultiply,
-      Math.min(5.0, config.widthCm)
-    );
-    drawLogoOnFlatRegions(
-      ctx,
-      baseCanvas.width,
-      baseCanvas.height,
-      logoCanvas,
-      LEFT_CHEST_TARGETS,
-      config,
-      useMultiply,
-      Math.max(6.8, config.widthCm * 1.65)
+      hasBadgeShadow
     );
   }
 

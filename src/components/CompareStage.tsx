@@ -22,27 +22,37 @@ import {
   type InspectHotspot,
 } from '../constants/assets';
 import {
+  ALL_LOGO_VARIANTS,
+  applyAutoContrastForShirt,
   buildCustomizedLogoCanvas,
+  BUTTON_COLOR_PRESETS,
   COLLAR_COLOR_PRESETS,
   composeBlankPoloBackdrop,
   DEFAULT_POLO_CONFIG,
+  FABRIC_TYPE_OPTIONS,
+  GARMENT_COLORWAY_PRESETS,
   getColorLuminance,
+  getEffectiveSvgPaletteSwatches,
   getLogoVariantMeta,
   LOGO_COLOR_PRESETS,
-  LOGO_VARIANT_CATALOG,
   PLACEMENT_OPTIONS,
   SHIRT_COLOR_PRESETS,
   STAGE_BACKDROP_OPTIONS,
+  TIPPING_STYLE_OPTIONS,
+  type FabricType,
   type LogoPlacement,
   type LogoStyle,
   type LogoVariant,
   type PoloDesignConfig,
+  type RatchasitSvgLogoId,
+  type TippingStyle,
 } from '../utils/sleeveLogoComposer';
-import { Polo3DViewer } from './Polo3DViewer';
+import { Polo3DViewer, type CameraPresetId } from './Polo3DViewer';
 
 type ViewMode = 'mockup' | '3d' | 'slider' | 'side-by-side';
 type CompareBase = 'blank' | 'original';
 type ControlTab = 'position' | 'shirt' | 'logo-color';
+type GalleryFilter = 'all' | 'new62' | 'legacy';
 
 interface CompareStageProps {
   resultImageUrl: string;
@@ -52,6 +62,8 @@ interface CompareStageProps {
   onDownloadFull: () => void;
   isDownloading: boolean;
   onNotify: (message: string) => void;
+  initialStudioOpen?: boolean;
+  initialCameraPreset?: CameraPresetId;
 }
 
 export const CompareStage: React.FC<CompareStageProps> = ({
@@ -62,9 +74,12 @@ export const CompareStage: React.FC<CompareStageProps> = ({
   onDownloadFull,
   isDownloading,
   onNotify,
+  initialStudioOpen = false,
+  initialCameraPreset = 'hero',
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('3d');
   const [controlTab, setControlTab] = useState<ControlTab>('position');
+  const [galleryFilter, setGalleryFilter] = useState<GalleryFilter>('all');
   const [compareBase, setCompareBase] = useState<CompareBase>('blank');
   const [sliderPos, setSliderPos] = useState<number>(48);
   const [isDragging, setIsDragging] = useState<boolean>(false);
@@ -128,15 +143,16 @@ export const CompareStage: React.FC<CompareStageProps> = ({
     };
   }, [config.backdrop]);
 
-  // Generate crisp live mini thumbnails for all 7 logo variants
+  // Generate crisp live mini thumbnails for all logo variants (using reference dark inks for unshielded SVGs)
   useEffect(() => {
     let cancelled = false;
     Promise.all(
-      LOGO_VARIANT_CATALOG.map(async (item) => {
+      ALL_LOGO_VARIANTS.map(async (item) => {
         const canvas = await buildCustomizedLogoCanvas(
           config,
           item.id,
-          'embroidery'
+          'embroidery',
+          { useReferenceDarkForThumb: true }
         );
         return [item.id, canvas.toDataURL('image/png')] as const;
       })
@@ -203,33 +219,16 @@ export const CompareStage: React.FC<CompareStageProps> = ({
   }, [lightboxOpen]);
 
   const handleSelectShirtColor = (hex: string) => {
-    const isDark = getColorLuminance(hex) < 120;
-    let nextTextColor = config.textColor;
-    if (isDark && getColorLuminance(config.textColor) < 90) {
-      nextTextColor = '#FFFFFF';
-    } else if (!isDark && config.textColor.toUpperCase() === '#FFFFFF') {
-      nextTextColor = '#1A2E4A';
-    }
+    const followPlacket =
+      config.placketColor.toUpperCase() === config.shirtColor.toUpperCase();
 
-    let nextHexFrame = config.hexFrameColor;
-    let nextHexNumber = config.hexNumberColor;
-    if (config.logoVariant === 'minimal-gable') {
-      if (isDark) {
-        if (getColorLuminance(nextHexFrame) < 90) nextHexFrame = '#FFFFFF';
-        if (getColorLuminance(nextHexNumber) < 90) nextHexNumber = '#FFFFFF';
-      } else {
-        if (nextHexFrame.toUpperCase() === '#FFFFFF') nextHexFrame = '#12244D';
-        if (nextHexNumber.toUpperCase() === '#FFFFFF') nextHexNumber = '#12244D';
-      }
-    }
-
-    onChangeConfig({
-      ...config,
-      shirtColor: hex,
-      textColor: nextTextColor,
-      hexFrameColor: nextHexFrame,
-      hexNumberColor: nextHexNumber,
-    });
+    onChangeConfig(
+      applyAutoContrastForShirt({
+        ...config,
+        shirtColor: hex,
+        placketColor: followPlacket ? hex : config.placketColor,
+      })
+    );
   };
 
   const handleSelectPlacement = (placement: LogoPlacement) => {
@@ -279,24 +278,30 @@ export const CompareStage: React.FC<CompareStageProps> = ({
     : '50% 50%';
 
   return (
-    <section id="compare" className="pt-10 pb-14 md:pt-12 md:pb-16">
+    <section id="compare" className="pt-6 pb-12 md:pt-8 md:pb-14">
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
         {/* Editorial Title & Metadata Strip */}
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-7">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 mb-5">
           <div className="max-w-2xl">
             <h1
-              className="text-3xl sm:text-4xl font-semibold tracking-tight text-[#111827] leading-[1.2]"
+              className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#111827] leading-[1.2]"
               style={{ textWrap: 'balance' }}
             >
               สตูดิโอออกแบบเสื้อโปโลและโลโก้
             </h1>
-            <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-[#525B63]">
-              <span>{activeVariantMeta.title}</span>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-[#525B63]">
+              <span>
+                {config.placement === 'chest-and-left-sleeve'
+                  ? `ติดคู่: ${config.chestLogoVariant === 'none' ? 'ปิดตราอก' : getLogoVariantMeta(config.chestLogoVariant).shortTitle} + ${config.sleeveLogoVariant === 'none' ? 'ปิดตราแขน' : getLogoVariantMeta(config.sleeveLogoVariant).shortTitle}`
+                  : activeVariantMeta.title}
+              </span>
               <span aria-hidden="true" className="text-zinc-300">·</span>
               <span>{placementMeta.label}</span>
               <span aria-hidden="true" className="text-zinc-300">·</span>
               <span className="font-mono text-xs tabular-nums text-[#111827]">
-                กว้าง {config.widthCm.toFixed(1)} ซม.
+                {config.placement === 'chest-and-left-sleeve'
+                  ? `อก ${config.chestWidthCm.toFixed(1)} · แขน ${config.sleeveWidthCm.toFixed(1)} ซม.`
+                  : `กว้าง ${config.widthCm.toFixed(1)} ซม.`}
               </span>
               {naturalSize && viewMode !== '3d' && (
                 <>
@@ -577,7 +582,13 @@ export const CompareStage: React.FC<CompareStageProps> = ({
 
           {/* Viewport Area */}
           {viewMode === '3d' ? (
-            <Polo3DViewer config={config} onNotify={onNotify} />
+            <Polo3DViewer
+              config={config}
+              onChangeConfig={onChangeConfig}
+              onNotify={onNotify}
+              initialStudioOpen={initialStudioOpen}
+              initialCameraPreset={initialCameraPreset}
+            />
           ) : imageError ? (
             <div className="aspect-[3/2] w-full bg-[#B5C8C7]/35 flex flex-col items-center justify-center p-8 text-center">
               <p className="text-base font-medium text-[#111827]">
@@ -801,11 +812,35 @@ export const CompareStage: React.FC<CompareStageProps> = ({
             </div>
           )}
 
-          {/* Logo Variant Gallery Strip (7 Options: 2 Original + 5 New Designs) */}
+          {/* Logo Variant Gallery Strip (8 Audited Ratchasit 62 SVGs + 7 Legacy Designs) */}
           <div className="px-4 sm:px-6 py-4 border-t border-zinc-200/80 bg-white space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-              <div className="text-xs font-semibold text-[#111827]">
-                เลือกแบบโลโก้ทางเลือก (7 แบบ · ออกแบบใหม่ 5 แบบ)
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-[#111827]">
+                  เลือกแบบโลโก้ ({ALL_LOGO_VARIANTS.length} แบบ)
+                </span>
+                <div className="inline-flex items-center p-0.5 bg-[#EAEFEF] rounded-lg text-[11px] font-medium">
+                  {(
+                    [
+                      { id: 'all', label: 'ทั้งหมด (15)' },
+                      { id: 'new62', label: 'รุ่น 62 ใหม่ (8 SVG)' },
+                      { id: 'legacy', label: 'แบบเดิม (7)' },
+                    ] as Array<{ id: GalleryFilter; label: string }>
+                  ).map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setGalleryFilter(f.id)}
+                      className={`px-2 py-1 rounded-md transition-colors cursor-pointer ${
+                        galleryFilter === f.id
+                          ? 'bg-white text-[#111827] shadow-xs'
+                          : 'text-[#525B63] hover:text-[#111827]'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="text-xs text-[#525B63] truncate">
                 กำลังใช้:{' '}
@@ -816,26 +851,71 @@ export const CompareStage: React.FC<CompareStageProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
-              {LOGO_VARIANT_CATALOG.map((item) => {
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+              {ALL_LOGO_VARIANTS.filter((item) => {
+                if (galleryFilter === 'new62') return Boolean(item.isRatchasitSvg);
+                if (galleryFilter === 'legacy') return !item.isRatchasitSvg;
+                return true;
+              }).map((item) => {
                 const selected = config.logoVariant === item.id;
                 const thumb = variantThumbs[item.id];
-                const isNewDesign = item.badgeNumber >= 3;
+                const isNew62 = Boolean(item.isRatchasitSvg);
+                const needsDarkBg =
+                  isNew62 && !item.hasWhiteShield;
                 return (
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() =>
-                      onChangeConfig({ ...config, logoVariant: item.id })
-                    }
+                    onClick={() => {
+                      const nextWidth = item.defaultWidthCm ?? config.widthCm;
+                      let nextPlacement = config.placement;
+                      let nextChestVar = config.chestLogoVariant;
+                      let nextSleeveVar = config.sleeveLogoVariant;
+                      let nextChestW = config.chestWidthCm;
+                      let nextSleeveW = config.sleeveWidthCm;
+
+                      if (item.isRatchasitSvg) {
+                        if (config.placement === 'chest-and-left-sleeve') {
+                          if (item.category === 'chest') {
+                            nextChestVar = item.id;
+                            nextChestW = nextWidth;
+                          } else {
+                            nextSleeveVar = item.id;
+                            nextSleeveW = nextWidth;
+                          }
+                        } else {
+                          nextPlacement =
+                            item.category === 'chest'
+                              ? 'left-chest'
+                              : 'left-sleeve';
+                        }
+                      }
+
+                      onChangeConfig(
+                        applyAutoContrastForShirt({
+                          ...config,
+                          logoVariant: item.id,
+                          placement: nextPlacement,
+                          chestLogoVariant: nextChestVar,
+                          sleeveLogoVariant: nextSleeveVar,
+                          chestWidthCm: nextChestW,
+                          sleeveWidthCm: nextSleeveW,
+                          widthCm: nextWidth,
+                        })
+                      );
+                    }}
                     title={`${item.title} — ${item.subtitle}`}
-                    className={`group flex flex-col items-center p-2 rounded-xl border text-center transition-colors cursor-pointer ${
+                    className={`group flex flex-col items-center p-1.5 rounded-xl border text-center transition-colors cursor-pointer ${
                       selected
                         ? 'border-[#1B314D] bg-[#F4F7FA] ring-1 ring-[#1B314D]'
                         : 'border-zinc-200 bg-white hover:bg-zinc-50 hover:border-zinc-300'
                     }`}
                   >
-                    <div className="relative w-full aspect-square max-h-[82px] rounded-lg bg-[#EEF2F3] border border-zinc-200/70 flex items-center justify-center p-1.5 overflow-hidden">
+                    <div
+                      className={`relative w-full aspect-square max-h-[78px] rounded-lg border border-zinc-200/70 flex items-center justify-center p-1.5 overflow-hidden ${
+                        needsDarkBg ? 'bg-[#1B2436]' : 'bg-[#EEF2F3]'
+                      }`}
+                    >
                       {thumb ? (
                         <img
                           src={thumb}
@@ -845,21 +925,21 @@ export const CompareStage: React.FC<CompareStageProps> = ({
                         />
                       ) : null}
                       <span
-                        className={`absolute top-1 left-1 px-1.5 py-0.5 text-[10px] font-mono font-semibold leading-none rounded ${
+                        className={`absolute top-1 left-1 px-1.5 py-0.5 text-[9.5px] font-mono font-semibold leading-none rounded ${
                           selected
-                            ? 'bg-[#1B314D] text-white'
+                            ? 'bg-[#E5C573] text-[#1B2436]'
                             : 'bg-white/90 text-[#374151] border border-zinc-200/80'
                         }`}
                       >
-                        {item.badgeNumber}
+                        {isNew62 ? (item.category === 'chest' ? 'อก' : 'แขน') : item.badgeNumber}
                       </span>
-                      {isNewDesign && (
-                        <span className="absolute top-1 right-1 px-1 py-0.5 text-[9px] font-semibold leading-none rounded bg-[#C81E2B] text-white">
-                          ใหม่
+                      {isNew62 && (
+                        <span className="absolute top-1 right-1 px-1 py-0.5 text-[9px] font-semibold leading-none rounded bg-[#1B314D] text-[#E5C573]">
+                          62
                         </span>
                       )}
                     </div>
-                    <div className="mt-2 w-full text-[11px] font-semibold text-[#111827] truncate">
+                    <div className="mt-1.5 w-full text-[10.5px] font-semibold text-[#111827] truncate">
                       {item.shortTitle}
                     </div>
                   </button>
@@ -997,6 +1077,105 @@ export const CompareStage: React.FC<CompareStageProps> = ({
                     )}
                   </div>
 
+                  {config.placement === 'chest-and-left-sleeve' && (
+                    <div className="p-3.5 rounded-xl bg-white border border-zinc-200/90 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-[#1B314D]">
+                          โหมดติดคู่จริง (Dual Kit): เลือกตราอกซ้าย + ตราแขนซ้ายคนละแบบได้พร้อมกัน
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <label htmlFor="dual-chest-select" className="text-[#525B63] font-medium">
+                              ตราอกซ้าย / กระเป๋าอก
+                            </label>
+                            <span className="font-mono tabular-nums text-[#111827]">
+                              {config.chestWidthCm.toFixed(1)} ซม.
+                            </span>
+                          </div>
+                          <select
+                            id="dual-chest-select"
+                            value={config.chestLogoVariant}
+                            onChange={(e) =>
+                              onChangeConfig({
+                                ...config,
+                                chestLogoVariant: e.target.value as LogoVariant | 'none',
+                              })
+                            }
+                            className="w-full px-3 py-1.5 text-xs bg-white border border-zinc-200 rounded-lg text-[#111827]"
+                          >
+                            <option value="none">— ไม่ติดตราอก —</option>
+                            {ALL_LOGO_VARIANTS.map((v) => (
+                              <option key={`chest-${v.id}`} value={v.id}>
+                                {v.title}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="range"
+                            min={4.5}
+                            max={9.0}
+                            step={0.1}
+                            value={config.chestWidthCm}
+                            aria-label="ความกว้างตราอกซ้าย (ซม.)"
+                            onChange={(e) =>
+                              onChangeConfig({
+                                ...config,
+                                chestWidthCm: Number(e.target.value),
+                              })
+                            }
+                            className="w-full studio-slider"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <label htmlFor="dual-sleeve-select" className="text-[#525B63] font-medium">
+                              ตราปลายแขนซ้าย
+                            </label>
+                            <span className="font-mono tabular-nums text-[#111827]">
+                              {config.sleeveWidthCm.toFixed(1)} ซม.
+                            </span>
+                          </div>
+                          <select
+                            id="dual-sleeve-select"
+                            value={config.sleeveLogoVariant}
+                            onChange={(e) =>
+                              onChangeConfig({
+                                ...config,
+                                sleeveLogoVariant: e.target.value as LogoVariant | 'none',
+                              })
+                            }
+                            className="w-full px-3 py-1.5 text-xs bg-white border border-zinc-200 rounded-lg text-[#111827]"
+                          >
+                            <option value="none">— ไม่ติดตราแขน —</option>
+                            {ALL_LOGO_VARIANTS.map((v) => (
+                              <option key={`sleeve-${v.id}`} value={v.id}>
+                                {v.title}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="range"
+                            min={3.5}
+                            max={8.0}
+                            step={0.1}
+                            value={config.sleeveWidthCm}
+                            aria-label="ความกว้างตราปลายแขนซ้าย (ซม.)"
+                            onChange={(e) =>
+                              onChangeConfig({
+                                ...config,
+                                sleeveWidthCm: Number(e.target.value),
+                              })
+                            }
+                            className="w-full studio-slider"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div
                     className={`grid grid-cols-1 sm:grid-cols-2 ${
                       isOriginalGable ? 'lg:grid-cols-4' : 'lg:grid-cols-3'
@@ -1112,112 +1291,347 @@ export const CompareStage: React.FC<CompareStageProps> = ({
               )}
 
               {controlTab === 'shirt' && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-[#111827]">
-                        เฉดสีตัวเสื้อโปโล
+                <div className="space-y-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <span className="block text-xs font-semibold text-[#111827]">
+                        ทรงเสื้อ 3D &amp; ชนิดเนื้อผ้า PBR
                       </span>
-                      <span className="font-mono uppercase tabular-nums text-[#525B63]">
-                        {config.shirtColor}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {SHIRT_COLOR_PRESETS.map((preset) => {
-                        const selected =
-                          config.shirtColor.toUpperCase() ===
-                          preset.hex.toUpperCase();
-                        return (
+                      <div className="flex flex-wrap gap-2">
+                        <div className="inline-flex p-1 bg-[#EAEFEF] rounded-lg">
                           <button
-                            key={preset.hex}
                             type="button"
-                            onClick={() => handleSelectShirtColor(preset.hex)}
-                            className={`inline-flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors cursor-pointer ${
-                              selected
-                                ? 'border-[#1B314D] bg-white text-[#111827] ring-1 ring-[#1B314D]'
-                                : 'border-zinc-200 bg-white text-[#374151] hover:border-zinc-300'
+                            onClick={() =>
+                              onChangeConfig({ ...config, garmentStyle: 'polo' })
+                            }
+                            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                              config.garmentStyle === 'polo'
+                                ? 'bg-white text-[#111827] shadow-xs'
+                                : 'text-[#525B63] hover:text-[#111827]'
                             }`}
                           >
+                            เสื้อโปโลปกพับ
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onChangeConfig({ ...config, garmentStyle: 'stand-collar' })
+                            }
+                            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                              config.garmentStyle === 'stand-collar'
+                                ? 'bg-white text-[#111827] shadow-xs'
+                                : 'text-[#525B63] hover:text-[#111827]'
+                            }`}
+                          >
+                            คอตั้งกระเป๋าอก
+                          </button>
+                        </div>
+
+                        <div className="inline-flex p-1 bg-[#EAEFEF] rounded-lg">
+                          {FABRIC_TYPE_OPTIONS.map((f) => (
+                            <button
+                              key={f.id}
+                              type="button"
+                              onClick={() =>
+                                onChangeConfig({
+                                  ...config,
+                                  fabricType: f.id as FabricType,
+                                })
+                              }
+                              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                                config.fabricType === f.id
+                                  ? 'bg-white text-[#111827] shadow-xs'
+                                  : 'text-[#525B63] hover:text-[#111827]'
+                              }`}
+                            >
+                              {f.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <span className="block text-xs font-semibold text-[#111827]">
+                        ชุดสีสำเร็จรูป (Colorways)
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {GARMENT_COLORWAY_PRESETS.map((preset) => (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() =>
+                              onChangeConfig(
+                                applyAutoContrastForShirt({
+                                  ...config,
+                                  garmentStyle: preset.garmentStyle,
+                                  fabricType: preset.fabricType,
+                                  shirtColor: preset.shirtColor,
+                                  collarColor: preset.collarColor,
+                                  cuffColor: preset.cuffColor,
+                                  tippingStyle: preset.tippingStyle,
+                                  tippingColor: preset.tippingColor,
+                                  placketColor: preset.placketColor,
+                                  buttonColor: preset.buttonColor,
+                                })
+                              )
+                            }
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 text-[#111827] cursor-pointer"
+                          >
                             <span
-                              className="w-4 h-4 rounded-sm border border-black/15 shrink-0"
-                              style={{ backgroundColor: preset.hex }}
-                              aria-hidden="true"
+                              className="w-3 h-3 rounded-full border border-black/20"
+                              style={{ backgroundColor: preset.shirtColor }}
                             />
                             {preset.name}
                           </button>
-                        );
-                      })}
-                      <label className="inline-flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium rounded-md border border-zinc-200 bg-white text-[#374151] hover:border-zinc-300 cursor-pointer">
-                        <input
-                          type="color"
-                          value={config.shirtColor}
-                          onChange={(e) => handleSelectShirtColor(e.target.value)}
-                          className="w-4 h-4 p-0 border-0 bg-transparent cursor-pointer"
-                          aria-label="เลือกเฉดสีตัวเสื้อแบบกำหนดเอง"
-                        />
-                        กำหนดเอง
-                      </label>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-[#111827]">
-                        สีปกคอและแถบปลายแขน
-                      </span>
-                      <span className="font-mono uppercase tabular-nums text-[#525B63]">
-                        {config.collarColor}
-                      </span>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2 border-t border-zinc-200/70">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-[#111827]">
+                          1. เฉดสีตัวเสื้อ
+                        </span>
+                        <span className="font-mono uppercase tabular-nums text-[#525B63]">
+                          {config.shirtColor}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {SHIRT_COLOR_PRESETS.map((preset) => {
+                          const selected =
+                            config.shirtColor.toUpperCase() ===
+                            preset.hex.toUpperCase();
+                          return (
+                            <button
+                              key={preset.hex}
+                              type="button"
+                              onClick={() => handleSelectShirtColor(preset.hex)}
+                              className={`inline-flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors cursor-pointer ${
+                                selected
+                                  ? 'border-[#1B314D] bg-white text-[#111827] ring-1 ring-[#1B314D]'
+                                  : 'border-zinc-200 bg-white text-[#374151] hover:border-zinc-300'
+                              }`}
+                            >
+                              <span
+                                className="w-4 h-4 rounded-sm border border-black/15 shrink-0"
+                                style={{ backgroundColor: preset.hex }}
+                                aria-hidden="true"
+                              />
+                              {preset.name}
+                            </button>
+                          );
+                        })}
+                        <label className="inline-flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium rounded-md border border-zinc-200 bg-white text-[#374151] hover:border-zinc-300 cursor-pointer">
+                          <input
+                            type="color"
+                            value={config.shirtColor}
+                            onChange={(e) => handleSelectShirtColor(e.target.value)}
+                            className="w-4 h-4 p-0 border-0 bg-transparent cursor-pointer"
+                            aria-label="เลือกเฉดสีตัวเสื้อแบบกำหนดเอง"
+                          />
+                          กำหนดเอง
+                        </label>
+                      </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {COLLAR_COLOR_PRESETS.map((preset) => {
-                        const selected =
-                          config.collarColor.toUpperCase() ===
-                          preset.hex.toUpperCase();
-                        return (
-                          <button
-                            key={preset.hex}
-                            type="button"
-                            onClick={() =>
-                              onChangeConfig({ ...config, collarColor: preset.hex })
-                            }
-                            className={`inline-flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors cursor-pointer ${
-                              selected
-                                ? 'border-[#1B314D] bg-white text-[#111827] ring-1 ring-[#1B314D]'
-                                : 'border-zinc-200 bg-white text-[#374151] hover:border-zinc-300'
-                            }`}
-                          >
-                            <span
-                              className="w-4 h-4 rounded-sm border border-black/15 shrink-0"
-                              style={{ backgroundColor: preset.hex }}
-                              aria-hidden="true"
+
+                    <div className="space-y-4">
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold text-[#111827]">
+                            2. สีปกคอ &amp; 3. แถบปลายแขน &amp; เส้นขลิบ
+                          </span>
+                          <span className="font-mono uppercase tabular-nums text-[#525B63]">
+                            {config.collarColor} / {config.cuffColor}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {COLLAR_COLOR_PRESETS.map((preset) => {
+                            const selected =
+                              config.collarColor.toUpperCase() ===
+                              preset.hex.toUpperCase();
+                            return (
+                              <button
+                                key={preset.hex}
+                                type="button"
+                                onClick={() =>
+                                  onChangeConfig({
+                                    ...config,
+                                    collarColor: preset.hex,
+                                    cuffColor: preset.hex,
+                                  })
+                                }
+                                className={`inline-flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors cursor-pointer ${
+                                  selected
+                                    ? 'border-[#1B314D] bg-white text-[#111827] ring-1 ring-[#1B314D]'
+                                    : 'border-zinc-200 bg-white text-[#374151] hover:border-zinc-300'
+                                }`}
+                              >
+                                <span
+                                  className="w-4 h-4 rounded-sm border border-black/15 shrink-0"
+                                  style={{ backgroundColor: preset.hex }}
+                                  aria-hidden="true"
+                                />
+                                {preset.name}
+                              </button>
+                            );
+                          })}
+                          <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-zinc-200 bg-white text-[#374151] cursor-pointer">
+                            <input
+                              type="color"
+                              value={config.cuffColor}
+                              onChange={(e) =>
+                                onChangeConfig({
+                                  ...config,
+                                  cuffColor: e.target.value,
+                                })
+                              }
+                              className="w-4 h-4 p-0 border-0 bg-transparent cursor-pointer"
+                              aria-label="เลือกสีปลายแขนแยก"
                             />
-                            {preset.name}
-                          </button>
-                        );
-                      })}
-                      <label className="inline-flex items-center gap-2 px-2.5 py-1.5 text-xs font-medium rounded-md border border-zinc-200 bg-white text-[#374151] hover:border-zinc-300 cursor-pointer">
-                        <input
-                          type="color"
-                          value={config.collarColor}
-                          onChange={(e) =>
-                            onChangeConfig({
-                              ...config,
-                              collarColor: e.target.value,
-                            })
-                          }
-                          className="w-4 h-4 p-0 border-0 bg-transparent cursor-pointer"
-                          aria-label="เลือกสีปกคอและแถบแขนแบบกำหนดเอง"
-                        />
-                        กำหนดเอง
-                      </label>
+                            สีแขนแยก
+                          </label>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          {TIPPING_STYLE_OPTIONS.map((t) => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() =>
+                                onChangeConfig({
+                                  ...config,
+                                  tippingStyle: t.id as TippingStyle,
+                                })
+                              }
+                              className={`px-2.5 py-1 text-xs font-medium rounded-md border cursor-pointer ${
+                                config.tippingStyle === t.id
+                                  ? 'bg-[#1B314D] text-white border-[#1B314D]'
+                                  : 'bg-white text-[#374151] border-zinc-200 hover:bg-zinc-50'
+                              }`}
+                            >
+                              {t.label}
+                            </button>
+                          ))}
+                          {config.tippingStyle !== 'none' && (
+                            <label className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-zinc-200 bg-white text-[#374151] cursor-pointer">
+                              <input
+                                type="color"
+                                value={config.tippingColor}
+                                onChange={(e) =>
+                                  onChangeConfig({
+                                    ...config,
+                                    tippingColor: e.target.value,
+                                  })
+                                }
+                                className="w-4 h-4 p-0 border-0 bg-transparent cursor-pointer"
+                              />
+                              สีขลิบ {config.tippingColor.toUpperCase()}
+                            </label>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 pt-1 border-t border-zinc-100 text-xs">
+                        <label className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border border-zinc-200 bg-white cursor-pointer">
+                          <span className="font-medium text-[#374151]">4. สาบกระดุม</span>
+                          <span className="inline-flex items-center gap-1.5 font-mono text-[11px]">
+                            <input
+                              type="color"
+                              value={config.placketColor}
+                              onChange={(e) =>
+                                onChangeConfig({
+                                  ...config,
+                                  placketColor: e.target.value,
+                                })
+                              }
+                              className="w-4 h-4 p-0 border-0 bg-transparent cursor-pointer"
+                            />
+                            {config.placketColor}
+                          </span>
+                        </label>
+
+                        <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border border-zinc-200 bg-white">
+                          <span className="font-medium text-[#374151]">5. กระดุม</span>
+                          <div className="flex items-center gap-1">
+                            {BUTTON_COLOR_PRESETS.slice(0, 4).map((b) => (
+                              <button
+                                key={b.hex}
+                                type="button"
+                                title={b.name}
+                                onClick={() =>
+                                  onChangeConfig({ ...config, buttonColor: b.hex })
+                                }
+                                className="w-4 h-4 rounded-full border border-black/20 cursor-pointer"
+                                style={{ backgroundColor: b.hex }}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
               )}
 
               {controlTab === 'logo-color' &&
-                (!isOriginalGable ? (
+                (activeVariantMeta.isRatchasitSvg ? (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3.5 rounded-xl bg-white border border-zinc-200/80 text-xs">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <span className="font-semibold text-[#111827]">
+                          ไฟล์เวกเตอร์พร้อมผลิต (&lt;path&gt; 100%) — {activeVariantMeta.title}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextAuto = !config.autoContrastLogo;
+                            const updated = { ...config, autoContrastLogo: nextAuto };
+                            onChangeConfig(
+                              nextAuto ? applyAutoContrastForShirt(updated) : updated
+                            );
+                          }}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-medium transition-colors cursor-pointer ${
+                            config.autoContrastLogo
+                              ? 'border-[#1B314D]/40 bg-[#F4F7FA] text-[#1B314D]'
+                              : 'border-zinc-200 bg-white text-[#525B63] hover:bg-zinc-50'
+                          }`}
+                        >
+                          ปรับสีโลโก้ตัดสีเสื้ออัตโนมัติ:{' '}
+                          <span className="font-semibold">
+                            {config.autoContrastLogo ? 'เปิด' : 'ปิด'}
+                          </span>
+                        </button>
+                      </div>
+                      <div className="text-[#525B63]">
+                        ระบบจะปรับเฉดสีเส้นสายทอง/ขาวให้อัตโนมัติเมื่อวางบนเสื้อโทนสว่าง หรือสีเข้ม/แดง เพื่อให้โลโก้คมชัดไม่กลืนกับเนื้อผ้า
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      {getEffectiveSvgPaletteSwatches(
+                        activeVariantMeta.id as RatchasitSvgLogoId,
+                        config.shirtColor,
+                        config.autoContrastLogo
+                      ).map((sw) => (
+                        <div
+                          key={sw.label}
+                          title={sw.label}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#F8FAFC] border border-zinc-200"
+                        >
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-black/20"
+                            style={{ backgroundColor: sw.hex }}
+                          />
+                          <span className="font-mono text-[11px] font-semibold text-[#0F172A]">
+                            {sw.hex}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : !isOriginalGable ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
                     {(
                       [

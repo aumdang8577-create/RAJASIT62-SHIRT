@@ -4,6 +4,8 @@
  * Thai typography (Prompt / IBM Plex Sans Thai), and transparent PNG output.
  */
 
+import type { RatchasitSvgLogoId, RatchasitSvgSwatch } from './ratchasitLogoAssets';
+
 export type CustomLogoDesignId =
   | 'shield-trowel'
   | 'circle-seal'
@@ -22,13 +24,18 @@ export interface LogoVariantMeta {
   id:
     | 'gable-62'
     | 'hex-crest'
-    | CustomLogoDesignId;
+    | CustomLogoDesignId
+    | RatchasitSvgLogoId;
   badgeNumber: number;
   shortTitle: string;
   title: string;
   subtitle: string;
   detailDesc: string;
   hasWhiteShield: boolean;
+  isRatchasitSvg?: boolean;
+  category?: 'chest' | 'sleeve';
+  defaultWidthCm?: number;
+  paletteSwatches?: RatchasitSvgSwatch[];
   colorLabels: {
     number: string;
     plumb: string;

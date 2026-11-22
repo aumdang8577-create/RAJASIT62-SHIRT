@@ -1,13 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { Download } from 'lucide-react';
 import {
+  ALL_LOGO_VARIANTS,
   buildCustomizedLogoCanvas,
   downloadStandaloneLogoPng,
   getColorLuminance,
+  getEffectiveSvgPaletteSwatches,
   getLogoVariantMeta,
-  LOGO_VARIANT_CATALOG,
+  isRatchasitSvgLogo,
   PLACEMENT_OPTIONS,
   type PoloDesignConfig,
+  type RatchasitSvgLogoId,
 } from '../utils/sleeveLogoComposer';
 
 type PreviewBackdrop = 'shirt' | 'checker' | 'dark';
@@ -36,7 +39,9 @@ export const LogoDetailCard: React.FC<LogoDetailCardProps> = ({
 
   useEffect(() => {
     let cancelled = false;
-    buildCustomizedLogoCanvas(config)
+    buildCustomizedLogoCanvas(config, config.logoVariant, config.style, {
+      useReferenceDarkForThumb: backdrop === 'dark',
+    })
       .then((canvas) => {
         if (cancelled) return;
         setLogoUrl(canvas.toDataURL('image/png'));
@@ -51,6 +56,9 @@ export const LogoDetailCard: React.FC<LogoDetailCardProps> = ({
     };
   }, [
     config.logoVariant,
+    config.shirtColor,
+    config.autoContrastLogo,
+    backdrop,
     config.roofColor,
     config.numberColor,
     config.textColor,
@@ -71,23 +79,29 @@ export const LogoDetailCard: React.FC<LogoDetailCardProps> = ({
   const isOriginalGable = config.logoVariant === 'gable-62';
   const variantMeta = getLogoVariantMeta(config.logoVariant);
 
-  const colorSpecs = !isOriginalGable
-    ? [
-        { label: variantMeta.colorLabels.number, hex: config.hexNumberColor },
-        { label: variantMeta.colorLabels.plumb, hex: config.hexPlumbColor },
-        { label: variantMeta.colorLabels.accent, hex: config.hexAccentColor },
-        { label: variantMeta.colorLabels.frame, hex: config.hexFrameColor },
-      ]
-    : [
-        { label: 'เส้นจั่วด้านบน', hex: config.roofColor },
-        { label: 'เลข 62 และขีดข้าง', hex: config.numberColor },
-        { label: 'ข้อความภาษาไทย', hex: config.textColor },
-        {
-          label: 'สีตัวเสื้อ / ปก-แขน',
-          hex: config.shirtColor,
-          secondaryHex: config.collarColor,
-        },
-      ];
+  const colorSpecs = isRatchasitSvgLogo(config.logoVariant)
+    ? getEffectiveSvgPaletteSwatches(
+        config.logoVariant as RatchasitSvgLogoId,
+        backdrop === 'dark' ? undefined : config.shirtColor,
+        backdrop === 'dark' ? false : config.autoContrastLogo
+      ).map((s) => ({ label: s.label, hex: s.hex }))
+    : !isOriginalGable
+      ? [
+          { label: variantMeta.colorLabels.number, hex: config.hexNumberColor },
+          { label: variantMeta.colorLabels.plumb, hex: config.hexPlumbColor },
+          { label: variantMeta.colorLabels.accent, hex: config.hexAccentColor },
+          { label: variantMeta.colorLabels.frame, hex: config.hexFrameColor },
+        ]
+      : [
+          { label: 'เส้นจั่วด้านบน', hex: config.roofColor },
+          { label: 'เลข 62 และขีดข้าง', hex: config.numberColor },
+          { label: 'ข้อความภาษาไทย', hex: config.textColor },
+          {
+            label: 'สีตัวเสื้อ / ปก-แขน',
+            hex: config.shirtColor,
+            secondaryHex: config.collarColor,
+          },
+        ];
 
   const handleDownload = async (type: 'embroidery' | 'navy-patch') => {
     setDownloadingType(type);
@@ -145,14 +159,18 @@ export const LogoDetailCard: React.FC<LogoDetailCardProps> = ({
           </div>
         </div>
 
-        {/* Quick 7-Logo Switcher Strip */}
+        {/* Quick Logo Switcher Strip */}
         <div className="mb-5 flex flex-wrap items-center gap-1.5">
-          {LOGO_VARIANT_CATALOG.map((opt) => (
+          {ALL_LOGO_VARIANTS.map((opt) => (
             <button
               key={opt.id}
               type="button"
               onClick={() =>
-                onChangeConfig({ ...config, logoVariant: opt.id })
+                onChangeConfig({
+                  ...config,
+                  logoVariant: opt.id,
+                  widthCm: opt.defaultWidthCm ?? config.widthCm,
+                })
               }
               className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap cursor-pointer ${
                 config.logoVariant === opt.id
@@ -160,7 +178,8 @@ export const LogoDetailCard: React.FC<LogoDetailCardProps> = ({
                   : 'bg-white text-[#374151] border-zinc-200 hover:bg-zinc-50'
               }`}
             >
-              {opt.badgeNumber}. {opt.shortTitle}
+              {opt.isRatchasitSvg ? 'SVG · ' : `${opt.badgeNumber}. `}
+              {opt.shortTitle}
             </button>
           ))}
         </div>
