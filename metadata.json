@@ -1,0 +1,6 @@
+{
+  "name": "CleanMockup — ลบโลโก้เสื้อโปโล",
+  "description": "สตูดิโอตรวจสอบ เปรียบเทียบก่อน-หลัง ครอปแยกมุม และดาวน์โหลดภาพม็อกอัพเสื้อโปโลที่ลบโลโก้ครบทุกจุดเรียบร้อยแล้ว",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
